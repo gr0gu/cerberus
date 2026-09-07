@@ -1,0 +1,29 @@
+services:
+  target-nginx:
+    image: nginx:alpine
+    container_name: target-nginx
+    networks:
+      sentinel-net:
+        ipv4_address: 172.28.0.10
+
+  target-redis:
+    image: redis:alpine
+    container_name: target-redis
+    networks:
+      sentinel-net:
+        ipv4_address: 172.28.0.20
+
+  target-dvwa:
+    image: vulnerables/web-dvwa
+    container_name: target-dvwa
+    networks:
+      sentinel-net:
+        ipv4_address: 172.28.0.30
+
+networks:
+  sentinel-net:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/24
