@@ -1,5 +1,5 @@
 # Multi-stage build for Cerberus Sentinel
-FROM golang:1.26-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /app
 COPY go.mod go.sum ./
@@ -14,6 +14,15 @@ FROM alpine:latest
 RUN apk add --no-cache nmap nmap-scripts ca-certificates
 
 WORKDIR /app
+
+# Ensure vulners.nse script is present in nmap script library
+COPY scripts/vulners.nse /usr/share/nmap/scripts/vulners.nse
+RUN nmap --script-updatedb
+
+# Create data directory
+RUN mkdir -p /app/data && chmod 777 /app/data
+
+# Copy compiled sentinel binary
 COPY --from=builder /bin/sentinel /app/sentinel
 
 EXPOSE 8080
@@ -28,4 +37,3 @@ ENV CERBERUS_VULN_INTERVAL=10m
 ENV CERBERUS_UNPRIVILEGED=false
 
 ENTRYPOINT ["/app/sentinel"]
-

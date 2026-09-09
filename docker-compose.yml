@@ -33,6 +33,10 @@ services:
       - CERBERUS_UNPRIVILEGED=false
     volumes:
       - ./data:/app/data
+      - ./data:/app/data:z
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     networks:
       sentinel-net:
         ipv4_address: 172.28.0.5

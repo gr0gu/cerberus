@@ -37,3 +37,6 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+#Mac OS
+.DS_Store
