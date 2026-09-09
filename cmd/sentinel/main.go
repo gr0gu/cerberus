@@ -1,7 +1,88 @@
 package main
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"log"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/gr0gu/cerberus/internal/api"
+	"github.com/gr0gu/cerberus/internal/config"
+	"github.com/gr0gu/cerberus/internal/scanner"
+	"github.com/gr0gu/cerberus/internal/scheduler"
+	"github.com/gr0gu/cerberus/internal/storage"
+)
+
+const banner = `
+   ____           _                         
+  / ___|___ _ __ | |__   ___ _ __ _   _ ___ 
+ | |   / _ \ '__|| '_ \ / _ \ '__| | | / __|
+ | |__|  __/ |   | |_) |  __/ |  | |_| \__ \
+  \____\___|_|   |_.__/ \___|_|   \__,_|___/
+  Network Sentinel & Vulnerability Auditor
+`
 
 func main() {
-	fmt.Println("Hello world")
+	fmt.Print(banner)
+	log.Println("[Main] Initializing Cerberus Network Sentinel...")
+
+	// 1. Load Configuration
+	cfg := config.Load()
+	log.Printf("[Main] Config: Subnet=%s, DiscoveryInterval=%v, VulnInterval=%v, Port=%d, DB=%s",
+		cfg.NetworkCIDR, cfg.DiscoveryInterval, cfg.VulnerabilityInterval, cfg.ServerPort, cfg.DBPath)
+
+	// 2. Initialize Database Storage
+	store, err := storage.New(cfg.DBPath)
+	if err != nil {
+		log.Fatalf("[Main] Failed to initialize storage: %v", err)
+	}
+	defer store.Close()
+	log.Printf("[Main] SQLite database connected at %s (WAL mode enabled)", cfg.DBPath)
+
+	// 3. Initialize Scanner Engine
+	scn := scanner.New(cfg)
+
+	// 4. Initialize Scheduler and Goroutine Workers
+	sched := scheduler.New(cfg, store, scn)
+
+	// 5. Initialize Web Server and REST API
+	srv := api.NewServer(cfg, store, sched)
+
+	// Context for background goroutine lifecycle
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// 6. Start Background Schedulers (Discovery + Periodic Vuln + Immediate Reactive Worker)
+	sched.Start(ctx)
+
+	// 7. Start HTTP Server in a Goroutine
+	go func() {
+		if err := srv.Start(); err != nil {
+			log.Fatalf("[Main] HTTP server exited unexpectedly: %v", err)
+		}
+	}()
+
+	// 8. Graceful Shutdown Interception
+	stopCh := make(chan os.Signal, 1)
+	signal.Notify(stopCh, os.Interrupt, syscall.SIGTERM)
+
+	sig := <-stopCh
+	log.Printf("[Main] Received signal '%v'. Commencing graceful shutdown...", sig)
+
+	// Stop background workers
+	cancel()
+	sched.Stop()
+
+	// Drain and stop HTTP server within 10 seconds
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("[Main] HTTP server shutdown warning: %v", err)
+	}
+
+	log.Println("[Main] Cerberus sentinel stopped cleanly.")
 }
