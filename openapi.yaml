@@ -1,0 +1,1206 @@
+openapi: 3.0.3
+info:
+  title: Cerberus Network Sentinel API
+  version: 1.0.0
+  description: >
+    # Welcome to the Cerberus Network Sentinel API
+
+
+    Cerberus Sentinel is an automated network security auditing and asset
+    inventory daemon built in Go. It continuously monitors network subnets,
+    profiles active devices and transport services, correlates banner metadata with
+    known Common Vulnerabilities and Exposures (CVEs), and exposes real-time
+    telemetry through a RESTful JSON interface.
+
+
+    ### How this documentation works
+
+
+    This API reference is automatically generated from the OpenAPI specification
+    uploaded to GitBook. GitBook parses the schema to render interactive endpoint
+    explorers, schema definitions, and executable code samples.
+
+
+    Key architectural features of this API:
+
+
+    - **Page groups** — Tags are organized into hierarchical sections (*Inventory*,
+    *Vulnerability Analysis*, *Scan Controls*, and *System Telemetry*), keeping related
+    endpoints naturally structured.
+
+    - **Auto-split sections** — `##` headings inside `info.description` are
+    automatically partitioned into distinct subpages in the sidebar navigation.
+
+    - **Reactive & Scheduled Operations** — The sentinel coordinates background
+    goroutines (30-minute discovery sweeps, 10-minute vulnerability audits) as well
+    as immediate on-demand scans.
+
+    - **Interactive Code Samples** — Every endpoint features hand-crafted code
+    snippets in cURL, JavaScript (Fetch), and Python (requests) via `x-codeSamples`.
+
+    - **Live Testing Panel** — Try endpoints directly within your browser against your
+    local daemon or containerized sentinel instance.
+
+
+    ## Servers & Network Topology
+
+
+    ### Servers
+
+
+    {% tabs %}
+
+    {% tab title="Local Daemon" %}
+
+    **Base URL**
+
+    `http://localhost:8080`
+
+    {% endtab %}
+
+
+    {% tab title="Docker Container" %}
+
+    **Base URL**
+
+    `http://172.28.0.5:8080`
+
+    {% endtab %}
+
+    {% tab title="Custom Host" %}
+
+    **Base URL**
+
+    `http://sentinel.local:8080`
+
+    {% endtab %}
+
+    {% endtabs %}
+
+
+    {% hint style="info" %}
+
+    Use the server switcher in the top-right of the **Try it** panel on each
+    endpoint page to target your desired sentinel runtime environment.
+
+    {% endhint %}
+
+
+    ## Getting Started
+
+
+    {% stepper %}
+
+    {% step %}
+
+    ## Verify Service Health
+
+    Issue a request to `GET /health` or `GET /api/status` to ensure the sentinel
+    daemon is active and background schedulers are operational.
+
+    {% endstep %}
+
+
+    {% step %}
+
+    ## Trigger a Subnet Discovery Sweep
+
+    Dispatch a `POST /api/scans/discovery/trigger` request to launch an immediate
+    background sweep across your configured network CIDR (e.g. `172.28.0.0/24`).
+
+    {% endstep %}
+
+
+    {% step %}
+
+    ## Query Live Inventory & CVEs
+
+    Retrieve the discovered hosts via `GET /api/devices` or inspect correlated
+    vulnerabilities using `GET /api/vulnerabilities?severity=CRITICAL`.
+
+    {% endstep %}
+
+    {% endstepper %}
+
+
+    ## Error Responses
+
+
+    All error responses conform to a unified JSON schema:
+
+
+    ```json
+
+    {
+      "error": "Detailed description of the error condition"
+    }
+
+    ```
+
+
+    | Status Code | Meaning | Resolution |
+
+    |---|---|---|
+
+    | `400 Bad Request` | Invalid query or path parameter | Verify parameter types (e.g. integer device ID). |
+
+    | `404 Not Found` | Requested device or entity not found | Confirm entity identifier via `GET /api/devices`. |
+
+    | `500 Internal Error` | Storage or probe execution failure | Check container logs or SQLite database file permissions. |
+
+
+    {% hint style="warning" %}
+
+    Active vulnerability scans invoke Nmap with NSE scripts against target devices. Ensure
+    the sentinel is only executed against authorized networks or isolated testing testbeds.
+
+    {% endhint %}
+servers:
+  - url: http://localhost:8080
+    description: Localhost Daemon
+  - url: http://172.28.0.5:8080
+    description: Docker Bridge (sentinel-net)
+tags:
+  - name: inventory-group
+    x-page-title: Inventory
+    x-page-icon: network-wired
+  - name: devices
+    x-parent: inventory-group
+    x-page-title: Devices
+    x-page-description: Discover, list, and query physical and virtual network endpoints.
+    x-page-icon: desktop
+  - name: services
+    x-parent: inventory-group
+    x-page-title: Services
+    x-page-description: Inspect open ports, protocols, and identified application banners.
+    x-page-icon: server
+  - name: security-group
+    x-page-title: Security & CVEs
+    x-page-icon: shield-halved
+  - name: vulnerabilities
+    x-parent: security-group
+    x-page-title: Vulnerabilities
+    x-page-description: Query detected CVEs, CVSS scores, and correlated exploit advisories.
+    x-page-icon: bug
+  - name: operations-group
+    x-page-title: Scan Operations
+    x-page-icon: satellite-dish
+  - name: scans
+    x-parent: operations-group
+    x-page-title: Scans & Audit
+    x-page-description: Audit historical scan executions and trigger on-demand sweeps.
+    x-page-icon: clock-rotate-left
+  - name: system-group
+    x-page-title: System & Telemetry
+    x-page-icon: gauge-high
+  - name: system
+    x-parent: system-group
+    x-page-title: Status & Export
+    x-page-description: Sentinel liveness, scheduler metrics, and complete data export.
+    x-page-icon: database
+paths:
+  /api/status:
+    get:
+      summary: Retrieve system telemetry and status
+      description: >
+        Returns real-time runtime metrics for the Cerberus daemon, including
+        process uptime, aggregated asset counts, current scheduler running states,
+        and timestamps for the next planned discovery and vulnerability sweeps.
+      tags:
+        - system
+      operationId: getSystemStatus
+      responses:
+        '200':
+          description: Live sentinel health and scheduler metrics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SystemStatus'
+              example:
+                uptime: 1h42m15s
+                uptime_seconds: 6135
+                active_devices: 5
+                total_devices: 5
+                total_services: 8
+                total_vulnerabilities: 102
+                discovery_next_run: '2026-09-25T12:00:00Z'
+                vuln_next_run: '2026-09-25T11:50:00Z'
+                is_discovery_running: false
+                is_vuln_running: false
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://localhost:8080/api/status
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/status');
+            const status = await res.json();
+            console.log(status);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/status')
+            print(r.json())
+
+  /api/devices:
+    get:
+      summary: List tracked network devices
+      description: >
+        Returns all discovered network endpoints tracked in the SQLite repository.
+        Supports filtering by operational liveness status (`up` or `down`). Each
+        device summary contains aggregated counts of open services and confirmed
+        vulnerabilities.
+      tags:
+        - devices
+      operationId: listDevices
+      parameters:
+        - name: status
+          in: query
+          required: false
+          description: Filter devices by liveness state.
+          schema:
+            type: string
+            enum: [up, down]
+          example: up
+      responses:
+        '200':
+          description: A list of tracked devices and summary count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceListResponse'
+              example:
+                count: 2
+                devices:
+                  - id: 1
+                    ip: 172.28.0.10
+                    mac: 02:42:AC:1C:00:0A
+                    hostname: target-nginx
+                    vendor: Docker Network
+                    status: up
+                    first_seen: '2026-09-25T10:00:00Z'
+                    last_seen: '2026-09-25T11:30:00Z'
+                    services_count: 1
+                    vulnerabilities_count: 0
+                  - id: 2
+                    ip: 172.28.0.30
+                    mac: 02:42:AC:1C:00:1E
+                    hostname: target-dvwa
+                    vendor: Docker Network
+                    status: up
+                    first_seen: '2026-09-25T10:00:00Z'
+                    last_seen: '2026-09-25T11:30:00Z'
+                    services_count: 1
+                    vulnerabilities_count: 102
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L "http://localhost:8080/api/devices?status=up"
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/devices?status=up');
+            const data = await res.json();
+            console.log(data.devices);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/devices', params={'status': 'up'})
+            print(r.json())
+
+  /api/devices/{id}:
+    get:
+      summary: Retrieve detailed device profile
+      description: >
+        Fetches complete forensic details for a single host by its numeric identifier,
+        including all identified transport-layer ports, application banners, and
+        correlated CVE security vulnerabilities.
+      tags:
+        - devices
+      operationId: getDeviceById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Unique integer ID of the device.
+          schema:
+            type: integer
+            format: int64
+          example: 2
+      responses:
+        '200':
+          description: Full device entity with nested services and vulnerabilities.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Device'
+              example:
+                id: 2
+                ip: 172.28.0.30
+                mac: 02:42:AC:1C:00:1E
+                hostname: target-dvwa
+                vendor: Docker Network
+                status: up
+                first_seen: '2026-09-25T10:00:00Z'
+                last_seen: '2026-09-25T11:30:00Z'
+                services_count: 1
+                vulnerabilities_count: 1
+                services:
+                  - id: 1
+                    device_id: 2
+                    device_ip: 172.28.0.30
+                    port: 80
+                    protocol: tcp
+                    service_name: http
+                    product: Apache httpd
+                    version: 2.4.25
+                    state: open
+                    updated_at: '2026-09-25T11:30:00Z'
+                vulnerabilities:
+                  - id: 1
+                    device_id: 2
+                    device_ip: 172.28.0.30
+                    service_port: 80
+                    cve_id: CVE-2026-44631
+                    title: Vulnerability CVE-2026-44631 on port 80
+                    severity: CRITICAL
+                    cvss_score: 9.8
+                    description: Identified via vulners script
+                    reference_url: https://vulners.com/cve/CVE-2026-44631
+                    detected_at: '2026-09-25T11:30:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://localhost:8080/api/devices/2
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/devices/2');
+            const device = await res.json();
+            console.log(device);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/devices/2')
+            print(r.json())
+
+  /api/services:
+    get:
+      summary: List all active network services
+      description: >
+        Returns an aggregated inventory of all application services and listening
+        sockets discovered across the entire monitored network infrastructure.
+      tags:
+        - services
+      operationId: listServices
+      responses:
+        '200':
+          description: List of all open services across endpoints.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceListResponse'
+              example:
+                count: 2
+                services:
+                  - id: 1
+                    device_id: 1
+                    device_ip: 172.28.0.10
+                    port: 80
+                    protocol: tcp
+                    service_name: http
+                    product: nginx
+                    version: 1.21.6
+                    state: open
+                    updated_at: '2026-09-25T11:00:00Z'
+                  - id: 2
+                    device_id: 2
+                    device_ip: 172.28.0.20
+                    port: 6379
+                    protocol: tcp
+                    service_name: redis
+                    product: Redis key-value store
+                    version: 7.0.0
+                    state: open
+                    updated_at: '2026-09-25T11:00:00Z'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://localhost:8080/api/services
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/services');
+            const data = await res.json();
+            console.log(data.services);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/services')
+            print(r.json())
+
+  /api/vulnerabilities:
+    get:
+      summary: List identified CVE vulnerabilities
+      description: >
+        Returns all security vulnerabilities correlated against discovered services.
+        Supports filtering by severity tier (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`, `UNKNOWN`).
+      tags:
+        - vulnerabilities
+      operationId: listVulnerabilities
+      parameters:
+        - name: severity
+          in: query
+          required: false
+          description: Filter CVE findings by normalized severity rating.
+          schema:
+            $ref: '#/components/schemas/VulnerabilitySeverity'
+          example: CRITICAL
+      responses:
+        '200':
+          description: A list of detected vulnerabilities and total count.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VulnerabilityListResponse'
+              example:
+                count: 1
+                vulnerabilities:
+                  - id: 1
+                    device_id: 2
+                    device_ip: 172.28.0.30
+                    service_port: 80
+                    cve_id: CVE-2026-44631
+                    title: Vulnerability CVE-2026-44631 on port 80
+                    severity: CRITICAL
+                    cvss_score: 9.8
+                    description: Identified via vulners script
+                    reference_url: https://vulners.com/cve/CVE-2026-44631
+                    detected_at: '2026-09-25T11:30:00Z'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L "http://localhost:8080/api/vulnerabilities?severity=CRITICAL"
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/vulnerabilities?severity=CRITICAL');
+            const data = await res.json();
+            console.log(data.vulnerabilities);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/vulnerabilities', params={'severity': 'CRITICAL'})
+            print(r.json())
+
+  /api/scans:
+    get:
+      summary: List historical scan audit records
+      description: >
+        Returns historical execution logs for discovery, periodic vulnerability audits,
+        and immediate reactive scan routines. Includes target specifications, execution
+        duration in milliseconds, and discovered entity metrics.
+      tags:
+        - scans
+      operationId: listScans
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of recent scan logs to return (default 50).
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 50
+          example: 20
+      responses:
+        '200':
+          description: List of execution audit records.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanListResponse'
+              example:
+                count: 2
+                scans:
+                  - id: 1
+                    scan_type: discovery
+                    status: completed
+                    target_spec: 172.28.0.0/24
+                    hosts_found: 5
+                    vulns_found: 0
+                    duration_ms: 1982
+                    started_at: '2026-09-25T11:00:00Z'
+                    completed_at: '2026-09-25T11:00:02Z'
+                  - id: 2
+                    scan_type: immediate
+                    status: completed
+                    target_spec: '[172.28.0.30]'
+                    hosts_found: 1
+                    vulns_found: 102
+                    duration_ms: 6491
+                    started_at: '2026-09-25T11:00:02Z'
+                    completed_at: '2026-09-25T11:00:08Z'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L "http://localhost:8080/api/scans?limit=20"
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/scans?limit=20');
+            const data = await res.json();
+            console.log(data.scans);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/scans', params={'limit': 20})
+            print(r.json())
+
+  /api/scans/discovery/trigger:
+    post:
+      summary: Trigger on-demand subnet discovery
+      description: >
+        Asynchronously initiates an immediate host discovery sweep across the configured
+        network subnet (`CERBERUS_SUBNET`). Returns immediately with HTTP 202 Accepted.
+        Newly detected endpoints are automatically queued for immediate vulnerability auditing.
+      tags:
+        - scans
+      operationId: triggerDiscoveryScan
+      responses:
+        '202':
+          description: Discovery scan task dispatched to background worker.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanTriggerResponse'
+              example:
+                message: Discovery scan initiated in background
+                status: running
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L -X POST http://localhost:8080/api/scans/discovery/trigger
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/scans/discovery/trigger', {
+              method: 'POST'
+            });
+            const data = await res.json();
+            console.log(data);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.post('http://localhost:8080/api/scans/discovery/trigger')
+            print(r.json())
+
+  /api/scans/vulnerability/trigger:
+    post:
+      summary: Trigger on-demand vulnerability audit
+      description: >
+        Asynchronously initiates an immediate vulnerability assessment sweep across
+        all active endpoints currently registered in the database. Returns immediately
+        with HTTP 202 Accepted.
+      tags:
+        - scans
+      operationId: triggerVulnerabilityScan
+      responses:
+        '202':
+          description: Vulnerability audit task dispatched to background worker.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScanTriggerResponse'
+              example:
+                message: Vulnerability audit initiated in background
+                status: running
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L -X POST http://localhost:8080/api/scans/vulnerability/trigger
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/scans/vulnerability/trigger', {
+              method: 'POST'
+            });
+            const data = await res.json();
+            console.log(data);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.post('http://localhost:8080/api/scans/vulnerability/trigger')
+            print(r.json())
+
+  /api/export/json:
+    get:
+      summary: Export complete network inventory snapshot
+      description: >
+        Emits a consolidated, structured JSON export document containing all tracked
+        network devices, their active services, and all correlated CVE vulnerability findings.
+        Supplied with a downloadable attachment header (`Content-Disposition`).
+      tags:
+        - system
+      operationId: exportAllData
+      responses:
+        '200':
+          description: Complete serialized inventory snapshot.
+          headers:
+            Content-Disposition:
+              schema:
+                type: string
+              example: attachment; filename="cerberus-export-20260925-115500.json"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExportData'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-hideTryItPanel: false
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L -O -J http://localhost:8080/api/export/json
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/export/json');
+            const backup = await res.json();
+            console.log(`Total devices: ${backup.total_devices}`);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/export/json')
+            with open('cerberus_export.json', 'w') as f:
+                f.write(r.text)
+
+  /health:
+    get:
+      summary: Liveness health check probe
+      description: Basic HTTP liveness endpoint intended for container health probes and load balancer checks.
+      tags:
+        - system
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is operational.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L http://localhost:8080/health
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/health');
+            console.log(await res.json());
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            print(requests.get('http://localhost:8080/health').json())
+
+components:
+  schemas:
+    Device:
+      type: object
+      required:
+        - id
+        - ip
+        - status
+        - first_seen
+        - last_seen
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique surrogate identifier for the device.
+          example: 1
+        ip:
+          type: string
+          description: IPv4 or IPv6 address.
+          example: 172.28.0.10
+        mac:
+          type: string
+          description: Physical MAC hardware address.
+          example: 02:42:AC:1C:00:0A
+        hostname:
+          type: string
+          description: Resolved PTR or NetBIOS hostname.
+          example: target-nginx
+        vendor:
+          type: string
+          description: Hardware manufacturer inferred from MAC OUI prefix.
+          example: Docker Network
+        status:
+          type: string
+          enum: [up, down]
+          description: Operational liveness state.
+          example: up
+        first_seen:
+          type: string
+          format: date-time
+          description: Initial discovery timestamp.
+        last_seen:
+          type: string
+          format: date-time
+          description: Most recent active response timestamp.
+        services_count:
+          type: integer
+          description: Number of open services detected on the host.
+          example: 1
+        vulnerabilities_count:
+          type: integer
+          description: Number of vulnerabilities correlated with the host.
+          example: 0
+        services:
+          type: array
+          description: Detailed list of active services (included on detail queries).
+          items:
+            $ref: '#/components/schemas/Service'
+        vulnerabilities:
+          type: array
+          description: Detailed list of correlated vulnerabilities (included on detail queries).
+          items:
+            $ref: '#/components/schemas/Vulnerability'
+
+    DeviceListResponse:
+      type: object
+      required:
+        - count
+        - devices
+      properties:
+        count:
+          type: integer
+          description: Total number of devices matching the query.
+          example: 5
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+
+    Service:
+      type: object
+      required:
+        - id
+        - device_id
+        - port
+        - protocol
+        - state
+        - updated_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique service record identifier.
+          example: 1
+        device_id:
+          type: integer
+          format: int64
+          description: Parent device foreign key identifier.
+          example: 2
+        device_ip:
+          type: string
+          description: IP address of the parent device.
+          example: 172.28.0.30
+        port:
+          type: integer
+          description: Transport-layer port number.
+          example: 80
+        protocol:
+          type: string
+          enum: [tcp, udp]
+          description: Layer-4 transport protocol.
+          example: tcp
+        service_name:
+          type: string
+          description: Canonical service name.
+          example: http
+        product:
+          type: string
+          description: Interrogated software application name.
+          example: Apache httpd
+        version:
+          type: string
+          description: Interrogated software version string.
+          example: 2.4.25
+        state:
+          type: string
+          enum: [open, filtered, closed]
+          description: Network socket state.
+          example: open
+        updated_at:
+          type: string
+          format: date-time
+          description: Timestamp of most recent service interrogation.
+        vulnerabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vulnerability'
+
+    ServiceListResponse:
+      type: object
+      required:
+        - count
+        - services
+      properties:
+        count:
+          type: integer
+          description: Total number of active services detected across all endpoints.
+          example: 2
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+
+    VulnerabilitySeverity:
+      type: string
+      enum:
+        - CRITICAL
+        - HIGH
+        - MEDIUM
+        - LOW
+        - UNKNOWN
+      x-enumDescriptions:
+        CRITICAL: CVSS score >= 9.0. Exploitation allows remote code execution or complete system takeover.
+        HIGH: CVSS score between 7.0 and 8.9. Severe vulnerabilities requiring urgent mitigation.
+        MEDIUM: CVSS score between 4.0 and 6.9. Moderately complex or constrained vulnerabilities.
+        LOW: CVSS score between 0.1 and 3.9. Minor information disclosures or low-impact weaknesses.
+        UNKNOWN: Informational or unrated security advisory.
+
+    Vulnerability:
+      type: object
+      required:
+        - id
+        - device_id
+        - service_port
+        - cve_id
+        - severity
+        - cvss_score
+        - detected_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique vulnerability record identifier.
+          example: 1
+        device_id:
+          type: integer
+          format: int64
+          description: Affected device foreign key identifier.
+          example: 2
+        device_ip:
+          type: string
+          description: IP address of the affected device.
+          example: 172.28.0.30
+        service_port:
+          type: integer
+          description: Open port number through which the vulnerability is exposed.
+          example: 80
+        cve_id:
+          type: string
+          description: Standard CVE vulnerability identifier.
+          example: CVE-2026-44631
+        title:
+          type: string
+          description: Summary headline of the vulnerability.
+          example: Vulnerability CVE-2026-44631 on port 80
+        severity:
+          $ref: '#/components/schemas/VulnerabilitySeverity'
+        cvss_score:
+          type: number
+          format: double
+          description: CVSS v3.x numerical base score (0.0 to 10.0).
+          example: 9.8
+        description:
+          type: string
+          description: Technical summary of the vulnerability.
+          example: Identified via vulners script
+        reference_url:
+          type: string
+          format: uri
+          description: Link to authoritative NIST NVD or Vulners security advisory.
+          example: https://vulners.com/cve/CVE-2026-44631
+        detected_at:
+          type: string
+          format: date-time
+          description: Initial detection timestamp.
+
+    VulnerabilityListResponse:
+      type: object
+      required:
+        - count
+        - vulnerabilities
+      properties:
+        count:
+          type: integer
+          description: Total number of vulnerabilities matching the criteria.
+          example: 102
+        vulnerabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/Vulnerability'
+
+    ScanLog:
+      type: object
+      required:
+        - id
+        - scan_type
+        - status
+        - target_spec
+        - hosts_found
+        - vulns_found
+        - duration_ms
+        - started_at
+      properties:
+        id:
+          type: integer
+          format: int64
+          description: Unique scan execution identifier.
+          example: 1
+        scan_type:
+          type: string
+          enum: [discovery, vulnerability, immediate]
+          description: Execution mode of the scan job.
+          example: discovery
+        status:
+          type: string
+          enum: [running, completed, failed]
+          description: Current execution status.
+          example: completed
+        target_spec:
+          type: string
+          description: Network CIDR or IP target list scanned.
+          example: 172.28.0.0/24
+        hosts_found:
+          type: integer
+          description: Count of live hosts detected during this run.
+          example: 5
+        vulns_found:
+          type: integer
+          description: Count of vulnerabilities detected during this run.
+          example: 0
+        duration_ms:
+          type: integer
+          format: int64
+          description: Total scan duration in milliseconds.
+          example: 1982
+        error_message:
+          type: string
+          description: Error details if status is failed.
+          example: ''
+        started_at:
+          type: string
+          format: date-time
+          description: Execution start timestamp.
+        completed_at:
+          type: string
+          format: date-time
+          description: Execution completion timestamp.
+
+    ScanListResponse:
+      type: object
+      required:
+        - count
+        - scans
+      properties:
+        count:
+          type: integer
+          description: Number of scan records returned.
+          example: 2
+        scans:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScanLog'
+
+    SystemStatus:
+      type: object
+      required:
+        - uptime
+        - uptime_seconds
+        - active_devices
+        - total_devices
+        - total_services
+        - total_vulnerabilities
+        - is_discovery_running
+        - is_vuln_running
+      properties:
+        uptime:
+          type: string
+          description: Human-readable daemon uptime duration.
+          example: 1h42m15s
+        uptime_seconds:
+          type: integer
+          format: int64
+          description: Total uptime in seconds.
+          example: 6135
+        active_devices:
+          type: integer
+          description: Total count of devices currently marked as up.
+          example: 5
+        total_devices:
+          type: integer
+          description: Total count of historical devices in database.
+          example: 5
+        total_services:
+          type: integer
+          description: Total count of active services identified.
+          example: 8
+        total_vulnerabilities:
+          type: integer
+          description: Total count of active vulnerabilities across all hosts.
+          example: 102
+        discovery_next_run:
+          type: string
+          format: date-time
+          description: Next planned discovery sweep timestamp.
+        vuln_next_run:
+          type: string
+          format: date-time
+          description: Next planned bulk vulnerability audit timestamp.
+        is_discovery_running:
+          type: boolean
+          description: True if a subnet discovery sweep is currently executing.
+          example: false
+        is_vuln_running:
+          type: boolean
+          description: True if a vulnerability audit sweep is currently executing.
+          example: false
+
+    ScanTriggerResponse:
+      type: object
+      required:
+        - message
+        - status
+      properties:
+        message:
+          type: string
+          description: Informational status message.
+          example: Discovery scan initiated in background
+        status:
+          type: string
+          description: Execution state.
+          example: running
+
+    ExportData:
+      type: object
+      required:
+        - exported_at
+        - network_cidr
+        - total_devices
+        - total_vulnerabilities
+        - devices
+      properties:
+        exported_at:
+          type: string
+          format: date-time
+          description: Timestamp when snapshot was exported.
+        network_cidr:
+          type: string
+          description: Configured network CIDR.
+          example: 172.28.0.0/24
+        total_devices:
+          type: integer
+          description: Number of exported devices.
+          example: 5
+        total_vulnerabilities:
+          type: integer
+          description: Number of exported vulnerabilities.
+          example: 102
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/Device'
+
+    HealthResponse:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          example: ok
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string
+          description: Description of the error that occurred.
+          example: device 42 not found
+
+  responses:
+    BadRequest:
+      description: The request contains invalid parameters or malformed identifiers.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: invalid device id
+    NotFound:
+      description: The requested resource could not be found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: device 99 not found
+    InternalServerError:
+      description: The server encountered an unexpected error processing the request.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            error: database operation failed
+
