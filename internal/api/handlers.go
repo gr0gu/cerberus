@@ -183,3 +183,39 @@ func (s *Server) handleExportJSON(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"cerberus-export-%s.json\"", time.Now().Format("20060102-150405")))
 	writeJSON(w, http.StatusOK, data)
 }
+
+// handleGetTimeline returns scan ticks and device activity periods for frontend timeline rendering.
+func (s *Server) handleGetTimeline(w http.ResponseWriter, r *http.Request) {
+	now := time.Now().UTC()
+	from := now.Add(-24 * time.Hour)
+	to := now
+
+	if toStr := r.URL.Query().Get("to"); toStr != "" {
+		if parsedTo, err := time.Parse(time.RFC3339, toStr); err == nil {
+			to = parsedTo.UTC()
+		}
+	}
+
+	if fromStr := r.URL.Query().Get("from"); fromStr != "" {
+		if parsedFrom, err := time.Parse(time.RFC3339, fromStr); err == nil {
+			from = parsedFrom.UTC()
+		} else if dur, err := time.ParseDuration(fromStr); err == nil {
+			from = to.Add(-dur)
+		}
+	}
+
+	statusFilter := r.URL.Query().Get("status")
+	vulnOnlyStr := r.URL.Query().Get("vulnerable_only")
+	if vulnOnlyStr == "" {
+		vulnOnlyStr = r.URL.Query().Get("vulnerable")
+	}
+	vulnerableOnly := vulnOnlyStr == "true" || vulnOnlyStr == "1"
+
+	timeline, err := s.storage.GetTimeline(r.Context(), from, to, statusFilter, vulnerableOnly)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, timeline)
+}

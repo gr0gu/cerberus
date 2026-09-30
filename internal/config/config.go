@@ -18,6 +18,7 @@ type Config struct {
 	VulnScript            string
 	Unprivileged          bool
 	ScanTimeout           time.Duration
+	SeedMockData          bool
 }
 
 // Load returns configuration populated with defaults and overridden by environment variables.
@@ -33,6 +34,7 @@ func Load() *Config {
 		VulnScript:            getEnv("CERBERUS_VULN_SCRIPT", "vulners"),
 		Unprivileged:          getEnvBool("CERBERUS_UNPRIVILEGED", true),
 		ScanTimeout:           getEnvDuration("CERBERUS_SCAN_TIMEOUT", 15*time.Minute),
+		SeedMockData:          getEnvBool("CERBERUS_MOCK_DATA", false),
 	}
 
 	return cfg

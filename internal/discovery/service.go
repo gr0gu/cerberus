@@ -64,11 +64,29 @@ func (s *Service) Run(ctx context.Context) ([]model.Device, error) {
 	}
 
 	var newDevicesCount int
+	observedIPs := make([]string, 0, len(devices))
+
 	for i := range devices {
 		savedDev, isNew, err := s.storage.UpsertDevice(ctx, &devices[i])
 		if err != nil {
 			log.Printf("[Discovery] Error upserting device %s: %v", devices[i].IP, err)
 			continue
+		}
+
+		observedIPs = append(observedIPs, savedDev.IP)
+
+		// Record point-in-time observation for live device
+		if scanLog != nil {
+			isVuln, vulnsCount, maxSev, _ := s.storage.GetDeviceSecurityPosture(ctx, savedDev.ID)
+			_ = s.storage.RecordDeviceScanObservation(ctx, &model.DeviceScanRecord{
+				DeviceID:     savedDev.ID,
+				ScanID:       scanLog.ID,
+				Status:       "up",
+				IsVulnerable: isVuln,
+				VulnsCount:   vulnsCount,
+				MaxSeverity:  maxSev,
+				RecordedAt:   start,
+			})
 		}
 
 		if isNew {
@@ -80,6 +98,13 @@ func (s *Service) Run(ctx context.Context) ([]model.Device, error) {
 				// Immediate reactive trigger!
 				s.onNewDevice(savedDev.IP)
 			}
+		}
+	}
+
+	// Mark missing devices as down and record their down observation
+	if scanLog != nil {
+		if err := s.storage.MarkMissingDevicesDown(ctx, scanLog.ID, observedIPs, start); err != nil {
+			log.Printf("[Discovery] Error updating missing devices: %v", err)
 		}
 	}
 

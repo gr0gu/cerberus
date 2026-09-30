@@ -226,3 +226,156 @@ func TestScanLogWorkflow(t *testing.T) {
 		t.Errorf("unexpected scans: %+v", scans)
 	}
 }
+
+func TestTimelineStorage(t *testing.T) {
+	s, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// 1. Create a device
+	dev1, _, err := s.UpsertDevice(ctx, &model.Device{
+		IP:       "172.28.0.20",
+		Hostname: "target-nginx",
+		Status:   "up",
+	})
+	if err != nil {
+		t.Fatalf("upsert device error: %v", err)
+	}
+
+	// 2. Create Scan 1 (Discovery) at now - 2h
+	t1 := now.Add(-2 * time.Hour)
+	scan1, err := s.CreateScanLog(ctx, &model.ScanLog{
+		ScanType:   "discovery",
+		Status:     "completed",
+		TargetSpec: "172.28.0.0/24",
+		HostsFound: 1,
+		StartedAt:  t1,
+	})
+	if err != nil {
+		t.Fatalf("create scan1 error: %v", err)
+	}
+
+	// Record observation for dev1 at t1 (clean / up)
+	err = s.RecordDeviceScanObservation(ctx, &model.DeviceScanRecord{
+		DeviceID:     dev1.ID,
+		ScanID:       scan1.ID,
+		Status:       "up",
+		IsVulnerable: false,
+		VulnsCount:   0,
+		MaxSeverity:  "NONE",
+		RecordedAt:   t1,
+	})
+	if err != nil {
+		t.Fatalf("record obs1 error: %v", err)
+	}
+
+	// 3. Create Scan 2 (Vuln scan) at now - 1h
+	t2 := now.Add(-1 * time.Hour)
+	scan2, err := s.CreateScanLog(ctx, &model.ScanLog{
+		ScanType:   "vulnerability",
+		Status:     "completed",
+		TargetSpec: "172.28.0.20",
+		HostsFound: 1,
+		VulnsFound: 1,
+		StartedAt:  t2,
+	})
+	if err != nil {
+		t.Fatalf("create scan2 error: %v", err)
+	}
+
+	// Insert vuln
+	_, _, _ = s.UpsertVulnerability(ctx, &model.Vulnerability{
+		DeviceID:    dev1.ID,
+		ServicePort: 80,
+		CVEID:       "CVE-2022-1234",
+		Severity:    "HIGH",
+		CVSSScore:   7.8,
+	})
+
+	isVuln, count, sev, err := s.GetDeviceSecurityPosture(ctx, dev1.ID)
+	if err != nil || !isVuln || count != 1 || sev != "HIGH" {
+		t.Fatalf("expected posture isVuln=true, count=1, sev=HIGH, got %v, %d, %s", isVuln, count, sev)
+	}
+
+	// Record observation for dev1 at t2 (vulnerable / up)
+	err = s.RecordDeviceScanObservation(ctx, &model.DeviceScanRecord{
+		DeviceID:     dev1.ID,
+		ScanID:       scan2.ID,
+		Status:       "up",
+		IsVulnerable: isVuln,
+		VulnsCount:   count,
+		MaxSeverity:  sev,
+		RecordedAt:   t2,
+	})
+	if err != nil {
+		t.Fatalf("record obs2 error: %v", err)
+	}
+
+	// 4. Create Scan 3 (Discovery) at now - 30m, where dev1 is missing!
+	t3 := now.Add(-30 * time.Minute)
+	scan3, err := s.CreateScanLog(ctx, &model.ScanLog{
+		ScanType:   "discovery",
+		Status:     "completed",
+		TargetSpec: "172.28.0.0/24",
+		HostsFound: 0,
+		StartedAt:  t3,
+	})
+	if err != nil {
+		t.Fatalf("create scan3 error: %v", err)
+	}
+
+	// dev1 is missing
+	err = s.MarkMissingDevicesDown(ctx, scan3.ID, []string{}, t3)
+	if err != nil {
+		t.Fatalf("mark missing down error: %v", err)
+	}
+
+	// Verify device status is now 'down'
+	dev1After, _ := s.GetDeviceByID(ctx, dev1.ID)
+	if dev1After.Status != "down" {
+		t.Errorf("expected device status down, got %s", dev1After.Status)
+	}
+
+	// 5. Query Timeline
+	timeline, err := s.GetTimeline(ctx, now.Add(-3*time.Hour), now, "", false)
+	if err != nil {
+		t.Fatalf("get timeline error: %v", err)
+	}
+
+	if len(timeline.ScanTicks) != 3 {
+		t.Errorf("expected 3 scan ticks, got %d", len(timeline.ScanTicks))
+	}
+	if len(timeline.Devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(timeline.Devices))
+	}
+
+	periods := timeline.Devices[0].Periods
+	// Should have 3 periods:
+	// 1: up, not vulnerable (NONE)
+	// 2: up, vulnerable (HIGH)
+	// 3: down, not vulnerable (NONE)
+	if len(periods) != 3 {
+		t.Fatalf("expected 3 segmented periods, got %d: %+v", len(periods), periods)
+	}
+
+	if periods[0].Status != "up" || periods[0].IsVulnerable || periods[0].MaxSeverity != "NONE" {
+		t.Errorf("unexpected period 0: %+v", periods[0])
+	}
+	if periods[1].Status != "up" || !periods[1].IsVulnerable || periods[1].MaxSeverity != "HIGH" {
+		t.Errorf("unexpected period 1: %+v", periods[1])
+	}
+	if periods[2].Status != "down" || periods[2].IsVulnerable {
+		t.Errorf("unexpected period 2: %+v", periods[2])
+	}
+
+	// Test vulnerable_only filter
+	vulnTimeline, err := s.GetTimeline(ctx, now.Add(-3*time.Hour), now, "", true)
+	if err != nil {
+		t.Fatalf("get vuln timeline error: %v", err)
+	}
+	if len(vulnTimeline.Devices) != 1 {
+		t.Errorf("expected 1 device in vulnTimeline, got %d", len(vulnTimeline.Devices))
+	}
+}

@@ -95,3 +95,63 @@ type ScanHostResult struct {
 	Services        []Service
 	Vulnerabilities []Vulnerability
 }
+
+// DeviceScanRecord stores a historical snapshot of a device during a specific scan.
+type DeviceScanRecord struct {
+	ID           int64     `json:"id"`
+	DeviceID     int64     `json:"device_id"`
+	ScanID       int64     `json:"scan_id"`
+	Status       string    `json:"status"` // "up" or "down"
+	IsVulnerable bool      `json:"is_vulnerable"`
+	VulnsCount   int       `json:"vulns_count"`
+	MaxSeverity  string    `json:"max_severity"` // "CRITICAL", "HIGH", "MEDIUM", "LOW", "NONE"
+	RecordedAt   time.Time `json:"recorded_at"`
+}
+
+// ScanTick represents a point on the timeline scan line when an engine scan completed.
+type ScanTick struct {
+	ScanID     int64     `json:"scan_id"`
+	Timestamp  time.Time `json:"timestamp"`
+	ScanType   string    `json:"scan_type"`
+	Status     string    `json:"status"`
+	TargetSpec string    `json:"target_spec"`
+	HostsFound int       `json:"hosts_found"`
+	DurationMs int64     `json:"duration_ms"`
+}
+
+// TimelinePeriod represents a continuous activity interval for a device with uniform status and vulnerability metrics.
+type TimelinePeriod struct {
+	StartedAt    time.Time `json:"started_at"`
+	EndedAt      time.Time `json:"ended_at"`
+	Status       string    `json:"status"`
+	IsVulnerable bool      `json:"is_vulnerable"`
+	VulnsCount   int       `json:"vulns_count"`
+	MaxSeverity  string    `json:"max_severity"`
+	IsOngoing    bool      `json:"is_ongoing"`
+}
+
+// TimelineDevice represents a device with its segmented activity periods for timeline visualization.
+type TimelineDevice struct {
+	DeviceID      int64            `json:"device_id"`
+	IP            string           `json:"ip"`
+	MAC           string           `json:"mac,omitempty"`
+	Hostname      string           `json:"hostname,omitempty"`
+	Vendor        string           `json:"vendor,omitempty"`
+	CurrentStatus string           `json:"current_status"`
+	Periods       []TimelinePeriod `json:"periods"`
+}
+
+// TimelineTimeWindow defines the bounds and high-level counts for a timeline query.
+type TimelineTimeWindow struct {
+	From         time.Time `json:"from"`
+	To           time.Time `json:"to"`
+	TotalScans   int       `json:"total_scans"`
+	TotalDevices int       `json:"total_devices"`
+}
+
+// TimelineResponse is the complete payload returned by GET /api/timeline.
+type TimelineResponse struct {
+	TimeWindow TimelineTimeWindow `json:"time_window"`
+	ScanTicks  []ScanTick         `json:"scan_ticks"`
+	Devices    []TimelineDevice   `json:"devices"`
+}

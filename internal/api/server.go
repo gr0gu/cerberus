@@ -39,6 +39,7 @@ func NewServer(cfg *config.Config, store *storage.Storage, sched *scheduler.Sche
 	mux.HandleFunc("GET /api/services", s.handleGetServices)
 	mux.HandleFunc("GET /api/vulnerabilities", s.handleGetVulnerabilities)
 	mux.HandleFunc("GET /api/scans", s.handleGetScans)
+	mux.HandleFunc("GET /api/timeline", s.handleGetTimeline)
 	mux.HandleFunc("POST /api/scans/discovery/trigger", s.handleTriggerDiscovery)
 	mux.HandleFunc("POST /api/scans/vulnerability/trigger", s.handleTriggerVuln)
 	mux.HandleFunc("GET /api/status", s.handleGetStatus)

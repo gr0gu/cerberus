@@ -190,6 +190,11 @@ tags:
     x-page-title: Scans & Audit
     x-page-description: Audit historical scan executions and trigger on-demand sweeps.
     x-page-icon: clock-rotate-left
+  - name: timeline
+    x-parent: operations-group
+    x-page-title: Timeline & Activity
+    x-page-description: Real-time scan ticks and device activity periods for timeline graphs.
+    x-page-icon: timeline
   - name: system-group
     x-page-title: System & Telemetry
     x-page-icon: gauge-high
@@ -585,6 +590,73 @@ paths:
           source: |
             import requests
             r = requests.get('http://localhost:8080/api/scans', params={'limit': 20})
+            print(r.json())
+
+  /api/timeline:
+    get:
+      summary: Retrieve device activity periods and scan line ticks
+      description: >
+        Returns time-series scan execution ticks alongside segmented continuous activity
+        periods for all tracked devices. Activity periods automatically segment across
+        liveness transitions (up <-> down) and vulnerability posture changes (severity shifts),
+        enabling direct rendering of interactive Gantt-style timeline graphs and scan lines.
+      tags:
+        - timeline
+      operationId: getTimeline
+      parameters:
+        - name: from
+          in: query
+          required: false
+          description: RFC3339 timestamp or duration (e.g. 24h, 7d) defining the start of the time window. Defaults to 24 hours ago.
+          schema:
+            type: string
+            example: "2026-09-30T06:00:00Z"
+        - name: to
+          in: query
+          required: false
+          description: RFC3339 timestamp defining the end of the time window. Defaults to current timestamp.
+          schema:
+            type: string
+            example: "2026-09-30T12:00:00Z"
+        - name: status
+          in: query
+          required: false
+          description: Filter devices by their current status.
+          schema:
+            type: string
+            enum: [up, down]
+        - name: vulnerable_only
+          in: query
+          required: false
+          description: If true, filters response to include only devices with detected vulnerabilities during the time window.
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Timeline dataset containing scan ticks and device activity periods.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimelineResponse'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      x-codeSamples:
+        - lang: cURL
+          label: CLI
+          source: |
+            curl -L "http://localhost:8080/api/timeline?from=24h&vulnerable_only=false"
+        - lang: JavaScript
+          label: Fetch
+          source: |
+            const res = await fetch('http://localhost:8080/api/timeline?from=24h');
+            const data = await res.json();
+            console.log(data.devices, data.scan_ticks);
+        - lang: Python
+          label: Python
+          source: |
+            import requests
+            r = requests.get('http://localhost:8080/api/timeline', params={'from': '24h'})
             print(r.json())
 
   /api/scans/discovery/trigger:
@@ -1158,6 +1230,144 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Device'
+
+    TimelineResponse:
+      type: object
+      required:
+        - time_window
+        - scan_ticks
+        - devices
+      properties:
+        time_window:
+          $ref: '#/components/schemas/TimelineTimeWindow'
+        scan_ticks:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScanTick'
+        devices:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelineDevice'
+
+    TimelineTimeWindow:
+      type: object
+      required:
+        - from
+        - to
+        - total_scans
+        - total_devices
+      properties:
+        from:
+          type: string
+          format: date-time
+          example: "2026-09-30T06:00:00Z"
+        to:
+          type: string
+          format: date-time
+          example: "2026-09-30T12:00:00Z"
+        total_scans:
+          type: integer
+          example: 7
+        total_devices:
+          type: integer
+          example: 4
+
+    ScanTick:
+      type: object
+      required:
+        - scan_id
+        - timestamp
+        - scan_type
+        - status
+      properties:
+        scan_id:
+          type: integer
+          example: 101
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-09-30T06:00:00Z"
+        scan_type:
+          type: string
+          example: discovery
+        status:
+          type: string
+          example: completed
+        target_spec:
+          type: string
+          example: "172.28.0.0/24"
+        hosts_found:
+          type: integer
+          example: 3
+        duration_ms:
+          type: integer
+          example: 1420
+
+    TimelineDevice:
+      type: object
+      required:
+        - device_id
+        - ip
+        - current_status
+        - periods
+      properties:
+        device_id:
+          type: integer
+          example: 2
+        ip:
+          type: string
+          example: "172.28.0.20"
+        mac:
+          type: string
+          example: "02:42:AC:1C:00:14"
+        hostname:
+          type: string
+          example: target-nginx
+        vendor:
+          type: string
+          example: Docker Inc.
+        current_status:
+          type: string
+          example: up
+        periods:
+          type: array
+          items:
+            $ref: '#/components/schemas/TimelinePeriod'
+
+    TimelinePeriod:
+      type: object
+      required:
+        - started_at
+        - ended_at
+        - status
+        - is_vulnerable
+        - vulns_count
+        - max_severity
+        - is_ongoing
+      properties:
+        started_at:
+          type: string
+          format: date-time
+          example: "2026-09-30T08:10:00Z"
+        ended_at:
+          type: string
+          format: date-time
+          example: "2026-09-30T12:00:00Z"
+        status:
+          type: string
+          example: up
+        is_vulnerable:
+          type: boolean
+          example: true
+        vulns_count:
+          type: integer
+          example: 2
+        max_severity:
+          type: string
+          example: HIGH
+        is_ongoing:
+          type: boolean
+          example: true
 
     HealthResponse:
       type: object

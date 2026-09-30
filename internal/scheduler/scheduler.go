@@ -278,6 +278,20 @@ func (s *Scheduler) scanTargets(ctx context.Context, targets []string, scanType 
 				totalVulnsFound++
 			}
 		}
+
+		// Record point-in-time observation with newly evaluated vulnerability posture
+		if scanLog != nil {
+			isVuln, vulnsCount, maxSev, _ := s.storage.GetDeviceSecurityPosture(ctx, dev.ID)
+			_ = s.storage.RecordDeviceScanObservation(ctx, &model.DeviceScanRecord{
+				DeviceID:     dev.ID,
+				ScanID:       scanLog.ID,
+				Status:       "up",
+				IsVulnerable: isVuln,
+				VulnsCount:   vulnsCount,
+				MaxSeverity:  maxSev,
+				RecordedAt:   time.Now().UTC(),
+			})
+		}
 	}
 
 	log.Printf("[%s Scan] Finished for %d hosts. Found %d vulnerabilities in %dms",

@@ -214,3 +214,79 @@ func TestAPI_DevicesAndDetails(t *testing.T) {
 		t.Errorf("expected CORS header *, got %s", recCors.Header().Get("Access-Control-Allow-Origin"))
 	}
 }
+
+func TestAPI_Timeline(t *testing.T) {
+	handler, store, cleanup := setupAPITest(t)
+	defer cleanup()
+
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	// Seed scan log
+	scan, err := store.CreateScanLog(ctx, &model.ScanLog{
+		ScanType:   "discovery",
+		Status:     "completed",
+		TargetSpec: "172.28.0.0/24",
+		HostsFound: 1,
+		StartedAt:  now.Add(-10 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("create scan log error: %v", err)
+	}
+
+	// Seed device
+	dev, _, err := store.UpsertDevice(ctx, &model.Device{
+		IP:       "172.28.0.10",
+		MAC:      "02:42:AC:1C:00:0A",
+		Hostname: "target-nginx",
+		Vendor:   "Docker",
+		Status:   "up",
+	})
+	if err != nil {
+		t.Fatalf("failed to insert device: %v", err)
+	}
+
+	// Seed observation
+	err = store.RecordDeviceScanObservation(ctx, &model.DeviceScanRecord{
+		DeviceID:     dev.ID,
+		ScanID:       scan.ID,
+		Status:       "up",
+		IsVulnerable: false,
+		VulnsCount:   0,
+		MaxSeverity:  "NONE",
+		RecordedAt:   now.Add(-10 * time.Minute),
+	})
+	if err != nil {
+		t.Fatalf("failed to record scan observation: %v", err)
+	}
+
+	// Request GET /api/timeline
+	req := httptest.NewRequest(http.MethodGet, "/api/timeline", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK, got %d (body: %s)", rec.Code, rec.Body.String())
+	}
+
+	var timeline model.TimelineResponse
+	if err := json.NewDecoder(rec.Body).Decode(&timeline); err != nil {
+		t.Fatalf("decode timeline error: %v", err)
+	}
+
+	if len(timeline.ScanTicks) != 1 {
+		t.Errorf("expected 1 scan tick, got %d", len(timeline.ScanTicks))
+	}
+	if len(timeline.Devices) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(timeline.Devices))
+	}
+	if len(timeline.Devices[0].Periods) != 1 {
+		t.Fatalf("expected 1 period, got %d", len(timeline.Devices[0].Periods))
+	}
+
+	period := timeline.Devices[0].Periods[0]
+	if period.Status != "up" || period.IsVulnerable || period.MaxSeverity != "NONE" {
+		t.Errorf("unexpected period: %+v", period)
+	}
+}
+
